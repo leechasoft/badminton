@@ -1,10 +1,12 @@
 {
   "name": "badmin",
   "version": "1.0.0",
-  "description": "",
+  "description": "배드민턴 매칭 시스템",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js",
+    "build": "npm install"
   },
   "keywords": [],
   "author": "",
