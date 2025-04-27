@@ -28,6 +28,10 @@
       width: 90%;
       max-width: 500px;
     }
+    .location-select {
+      max-height: 300px;
+      overflow-y: auto;
+    }
   </style>
 </head>
 <body class="bg-gray-100">
@@ -41,6 +45,24 @@
         <input type="text" id="userNameInput" placeholder="이름을 입력하세요" class="w-full border border-gray-300 rounded p-2 mb-4">
         <div class="flex justify-end">
           <button id="registerBtn" class="px-4 py-2 rounded bg-blue-500 text-white">확인</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 장소 선택 모달 -->
+    <div id="locationModal" class="modal">
+      <div class="modal-content">
+        <h3 class="text-lg font-bold mb-4">장소 선택</h3>
+        <p class="mb-2">게임을 진행할 장소를 선택해주세요. (1-100)</p>
+        <div class="flex mb-4">
+          <input type="number" id="locationInput" min="1" max="100" placeholder="1-100 번호 입력" class="w-full border border-gray-300 rounded p-2">
+          <button id="searchLocationBtn" class="ml-2 px-4 py-2 rounded bg-blue-500 text-white">검색</button>
+        </div>
+        <div id="locationList" class="location-select mb-4 border border-gray-200 rounded p-2">
+          <p class="text-gray-500 text-center py-4">위 번호를 검색하거나 아래에서 장소를 선택하세요</p>
+        </div>
+        <div class="flex justify-end mt-2">
+          <button id="confirmLocationBtn" class="px-4 py-2 rounded bg-blue-500 text-white" disabled>선택 완료</button>
         </div>
       </div>
     </div>
@@ -63,6 +85,10 @@
         <h2 class="text-lg font-bold" id="currentUserName">현재 플레이어: </h2>
         <button id="changeNameBtn" class="px-2 py-1 text-xs rounded bg-blue-500 text-white">이름 변경</button>
       </div>
+      <div class="flex justify-between items-center mt-2">
+        <p id="currentLocationText" class="text-sm">선택된 장소: 없음</p>
+        <button id="changeLocationBtn" class="px-2 py-1 text-xs rounded bg-green-500 text-white">장소 변경</button>
+      </div>
       <p class="text-xs text-gray-500 mt-1">
         다른 모든 참가자들과 실시간으로 연결되어 있습니다
       </p>
@@ -71,13 +97,21 @@
     <!-- 코트 상태 -->
     <div class="mb-4">
       <h2 class="text-lg font-bold mb-2">코트 상태</h2>
-      <div class="grid grid-cols-2 gap-2" id="courtContainer"></div>
+      <div class="grid grid-cols-2 gap-2" id="courtContainer">
+        <div class="p-3 rounded-lg shadow bg-gray-200 text-center">
+          <p>장소를 선택해주세요</p>
+        </div>
+      </div>
     </div>
 
     <!-- 조별 대기열 -->
     <div>
       <h2 class="text-lg font-bold mb-2">조별 대기열</h2>
-      <div class="grid grid-cols-1 gap-4" id="teamContainer"></div>
+      <div class="grid grid-cols-1 gap-4" id="teamContainer">
+        <div class="p-3 rounded-lg shadow bg-gray-200 text-center">
+          <p>장소를 선택해주세요</p>
+        </div>
+      </div>
     </div>
 
   </div>
@@ -87,12 +121,21 @@
     let currentUser = null;
     let gameData = null;
     let selectedTeamKey = null;
+    let currentLocation = null;
+    let selectedLocationId = null;
 
     const loginModal = document.getElementById('loginModal');
+    const locationModal = document.getElementById('locationModal');
     const userNameInput = document.getElementById('userNameInput');
+    const locationInput = document.getElementById('locationInput');
+    const locationList = document.getElementById('locationList');
     const registerBtn = document.getElementById('registerBtn');
+    const searchLocationBtn = document.getElementById('searchLocationBtn');
+    const confirmLocationBtn = document.getElementById('confirmLocationBtn');
     const currentUserName = document.getElementById('currentUserName');
+    const currentLocationText = document.getElementById('currentLocationText');
     const changeNameBtn = document.getElementById('changeNameBtn');
+    const changeLocationBtn = document.getElementById('changeLocationBtn');
     const courtContainer = document.getElementById('courtContainer');
     const teamContainer = document.getElementById('teamContainer');
     const addPlayerModal = document.getElementById('addPlayerModal');
@@ -105,6 +148,13 @@
       userNameInput.focus();
     }
 
+    function showLocationModal() {
+      // 장소 목록 초기화 및 렌더링
+      renderLocationList();
+      locationModal.style.display = 'block';
+      locationInput.focus();
+    }
+
     function showAddPlayerModal(teamKey) {
       selectedTeamKey = teamKey;
       playerNameInput.value = '';
@@ -112,10 +162,55 @@
       playerNameInput.focus();
     }
 
+    function renderLocationList() {
+      if (!gameData) return;
+      
+      // 장소 목록 생성
+      const locations = gameData.locations;
+      let listHtml = '';
+      
+      if (locationInput.value) {
+        const searchVal = parseInt(locationInput.value);
+        if (searchVal >= 1 && searchVal <= 100) {
+          const location = locations.find(loc => loc.id === searchVal);
+          if (location) {
+            listHtml += `<div class="location-item p-2 cursor-pointer hover:bg-blue-100 rounded mb-1" data-location-id="${location.id}">
+              ${location.name} (코트 ${location.courts.length}개)
+            </div>`;
+          }
+        }
+      } else {
+        // 첫 10개만 기본으로 표시
+        for (let i = 0; i < Math.min(10, locations.length); i++) {
+          const location = locations[i];
+          listHtml += `<div class="location-item p-2 cursor-pointer hover:bg-blue-100 rounded mb-1" data-location-id="${location.id}">
+            ${location.name} (코트 ${location.courts.length}개)
+          </div>`;
+        }
+      }
+      
+      if (listHtml === '') {
+        listHtml = '<p class="text-gray-500 text-center py-4">검색 결과가 없습니다</p>';
+      }
+      
+      locationList.innerHTML = listHtml;
+      
+      // 장소 선택 이벤트 추가
+      document.querySelectorAll('.location-item').forEach(item => {
+        item.addEventListener('click', function() {
+          document.querySelectorAll('.location-item').forEach(el => {
+            el.classList.remove('bg-blue-200');
+          });
+          this.classList.add('bg-blue-200');
+          selectedLocationId = parseInt(this.getAttribute('data-location-id'));
+          confirmLocationBtn.disabled = false;
+        });
+      });
+    }
+
     socket.on('initialData', (data) => {
       gameData = data;
-      renderGameData();
-
+      
       const savedName = localStorage.getItem('userName');
       if (savedName && !currentUser) {
         socket.emit('registerUser', { name: savedName });
@@ -128,6 +223,9 @@
       currentUser = user;
       currentUserName.textContent = `현재 플레이어: ${user.name}`;
       loginModal.style.display = 'none';
+      
+      // 사용자 등록 후 장소 선택 모달 표시
+      showLocationModal();
     });
 
     socket.on('userUpdated', (user) => {
@@ -135,54 +233,27 @@
       currentUserName.textContent = `현재 플레이어: ${user.name}`;
     });
 
-    socket.on('dataUpdated', (data) => {
-      gameData = data;
-      renderGameData();
+    socket.on('locationSelected', (locationId) => {
+      const location = gameData.locations.find(loc => loc.id === locationId);
+      if (location) {
+        currentLocation = location;
+        currentLocationText.textContent = `선택된 장소: ${location.name}`;
+        locationModal.style.display = 'none';
+        socket.emit("joinLocation", locationId);
+      }
+    });
+
+    socket.on('locationData', (location) => {
+      currentLocation = location;
+      renderLocation();
     });
 
     socket.on('error', (message) => {
       alert(message);
     });
 
-    registerBtn.addEventListener('click', () => {
-      const name = userNameInput.value.trim();
-      if (name) {
-        localStorage.setItem('userName', name);
-        socket.emit('registerUser', { name });
-      } else {
-        alert('이름을 입력해주세요.');
-      }
-    });
-
-    changeNameBtn.addEventListener('click', () => {
-      const newName = prompt('변경할 이름을 입력하세요:', currentUser?.name || '');
-      if (newName && newName.trim()) {
-        localStorage.setItem('userName', newName.trim());
-              // currentUser 객체에도 반영
-        currentUserName.textContent = `현재 플레이어: ${newName}`;
-        socket.emit('changeUserName', newName.trim());
-      }
-    });
-
-    cancelAddPlayerBtn.addEventListener('click', () => {
-      addPlayerModal.style.display = 'none';
-    });
-
-    confirmAddPlayerBtn.addEventListener('click', () => {
-      const playerName = playerNameInput.value.trim();
-      if (playerName) {
-        socket.emit('addExternalPlayer', {
-          teamKey: selectedTeamKey,
-          playerName
-        });
-        addPlayerModal.style.display = 'none';
-      } else {
-        alert('이름을 입력해주세요.');
-      }
-    });
-
-    function renderGameData() {
-      if (!gameData) return;
+    function renderLocation() {
+      if (!currentLocation) return;
       renderCourts();
       renderTeams();
     }
@@ -190,7 +261,16 @@
     function renderCourts() {
       courtContainer.innerHTML = '';
 
-      gameData.courts.forEach(court => {
+      if (!currentLocation) {
+        courtContainer.innerHTML = `
+          <div class="p-3 rounded-lg shadow bg-gray-200 text-center">
+            <p>장소를 선택해주세요</p>
+          </div>
+        `;
+        return;
+      }
+
+      currentLocation.courts.forEach(court => {
         const courtElement = document.createElement('div');
         courtElement.className = `p-3 rounded-lg shadow ${court.inUse ? 'bg-red-100' : 'bg-green-100'}`;
 
@@ -240,8 +320,17 @@
     function renderTeams() {
       teamContainer.innerHTML = '';
 
-      Object.keys(gameData.teams).forEach(teamKey => {
-        const team = gameData.teams[teamKey];
+      if (!currentLocation) {
+        teamContainer.innerHTML = `
+          <div class="p-3 rounded-lg shadow bg-gray-200 text-center">
+            <p>장소를 선택해주세요</p>
+          </div>
+        `;
+        return;
+      }
+
+      Object.keys(currentLocation.teams).forEach(teamKey => {
+        const team = currentLocation.teams[teamKey];
         const teamElement = document.createElement('div');
         teamElement.className = 'bg-white p-3 rounded-lg shadow';
 
@@ -307,18 +396,75 @@
       });
     }
 
+    // 이벤트 리스너 등록
+    registerBtn.addEventListener('click', () => {
+      const name = userNameInput.value.trim();
+      if (name) {
+        localStorage.setItem('userName', name);
+        socket.emit('registerUser', { name });
+      } else {
+        alert('이름을 입력해주세요.');
+      }
+    });
+
+    changeNameBtn.addEventListener('click', () => {
+      const newName = prompt('변경할 이름을 입력하세요:', currentUser?.name || '');
+      if (newName && newName.trim()) {
+        localStorage.setItem('userName', newName.trim());
+        currentUserName.textContent = `현재 플레이어: ${newName}`;
+        socket.emit('changeUserName', newName.trim());
+      }
+    });
+
+    changeLocationBtn.addEventListener('click', () => {
+      showLocationModal();
+    });
+
+    searchLocationBtn.addEventListener('click', () => {
+      renderLocationList();
+    });
+
+    confirmLocationBtn.addEventListener('click', () => {
+      if (selectedLocationId) {
+        socket.emit('selectLocation', selectedLocationId);
+      }
+    });
+
+    cancelAddPlayerBtn.addEventListener('click', () => {
+      addPlayerModal.style.display = 'none';
+    });
+
+    confirmAddPlayerBtn.addEventListener('click', () => {
+      const playerName = playerNameInput.value.trim();
+      if (playerName) {
+        socket.emit('addExternalPlayer', {
+          teamKey: selectedTeamKey,
+          playerName
+        });
+        addPlayerModal.style.display = 'none';
+      } else {
+        alert('이름을 입력해주세요.');
+      }
+    });
+
     userNameInput.addEventListener('keypress', (e) => {
       if (e.key === 'Enter') registerBtn.click();
+    });
+
+    locationInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') searchLocationBtn.click();
     });
 
     playerNameInput.addEventListener('keypress', (e) => {
       if (e.key === 'Enter') confirmAddPlayerBtn.click();
     });
 
+    // 모달 외부 클릭시 닫기
     window.onclick = function(event) {
       if (event.target === addPlayerModal) {
         addPlayerModal.style.display = 'none';
       }
+      // 로그인과 장소 선택 모달은 외부 클릭으로 닫지 않음
     };
   </script>
 </body>
