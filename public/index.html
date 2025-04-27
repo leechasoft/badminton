@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>배드민턴 게임 매칭</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', 'Apple SD Gothic Neo', sans-serif;
+    }
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 100;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+    }
+    .modal-content {
+      background-color: #fff;
+      margin: 15% auto;
+      padding: 20px;
+      border-radius: 10px;
+      width: 90%;
+      max-width: 500px;
+    }
+  </style>
+</head>
+<body class="bg-gray-100">
+  <div class="container mx-auto px-4 py-4 max-w-md">
+
+    <!-- 로그인 모달 -->
+    <div id="loginModal" class="modal">
+      <div class="modal-content">
+        <h3 class="text-lg font-bold mb-4">환영합니다!</h3>
+        <p class="mb-4">배드민턴 매칭 앱을 사용하기 위해 이름을 입력해주세요.</p>
+        <input type="text" id="userNameInput" placeholder="이름을 입력하세요" class="w-full border border-gray-300 rounded p-2 mb-4">
+        <div class="flex justify-end">
+          <button id="registerBtn" class="px-4 py-2 rounded bg-blue-500 text-white">확인</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 새 선수 추가 모달 -->
+    <div id="addPlayerModal" class="modal">
+      <div class="modal-content">
+        <h3 class="text-lg font-bold mb-4">새 플레이어 추가</h3>
+        <input type="text" id="playerNameInput" placeholder="이름을 입력하세요" class="w-full border border-gray-300 rounded p-2 mb-4">
+        <div class="flex justify-end space-x-2">
+          <button id="cancelAddPlayerBtn" class="px-4 py-2 rounded bg-gray-300">취소</button>
+          <button id="confirmAddPlayerBtn" class="px-4 py-2 rounded bg-blue-500 text-white">추가</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 현재 사용자 정보 -->
+    <div class="bg-white p-4 rounded-lg shadow mb-4">
+      <div class="flex justify-between items-center">
+        <h2 class="text-lg font-bold" id="currentUserName">현재 플레이어: </h2>
+        <button id="changeNameBtn" class="px-2 py-1 text-xs rounded bg-blue-500 text-white">이름 변경</button>
+      </div>
+      <p class="text-xs text-gray-500 mt-1">
+        다른 모든 참가자들과 실시간으로 연결되어 있습니다
+      </p>
+    </div>
+
+    <!-- 코트 상태 -->
+    <div class="mb-4">
+      <h2 class="text-lg font-bold mb-2">코트 상태</h2>
+      <div class="grid grid-cols-2 gap-2" id="courtContainer"></div>
+    </div>
+
+    <!-- 조별 대기열 -->
+    <div>
+      <h2 class="text-lg font-bold mb-2">조별 대기열</h2>
+      <div class="grid grid-cols-1 gap-4" id="teamContainer"></div>
+    </div>
+
+  </div>
+
+  <script>
+    const socket = io();
+    let currentUser = null;
+    let gameData = null;
+    let selectedTeamKey = null;
+
+    const loginModal = document.getElementById('loginModal');
+    const userNameInput = document.getElementById('userNameInput');
+    const registerBtn = document.getElementById('registerBtn');
+    const currentUserName = document.getElementById('currentUserName');
+    const changeNameBtn = document.getElementById('changeNameBtn');
+    const courtContainer = document.getElementById('courtContainer');
+    const teamContainer = document.getElementById('teamContainer');
+    const addPlayerModal = document.getElementById('addPlayerModal');
+    const playerNameInput = document.getElementById('playerNameInput');
+    const cancelAddPlayerBtn = document.getElementById('cancelAddPlayerBtn');
+    const confirmAddPlayerBtn = document.getElementById('confirmAddPlayerBtn');
+
+    function showLoginModal() {
+      loginModal.style.display = 'block';
+      userNameInput.focus();
+    }
+
+    function showAddPlayerModal(teamKey) {
+      selectedTeamKey = teamKey;
+      playerNameInput.value = '';
+      addPlayerModal.style.display = 'block';
+      playerNameInput.focus();
+    }
+
+    socket.on('initialData', (data) => {
+      gameData = data;
+      renderGameData();
+
+      const savedName = localStorage.getItem('userName');
+      if (savedName && !currentUser) {
+        socket.emit('registerUser', { name: savedName });
+      } else if (!currentUser) {
+        showLoginModal();
+      }
+    });
+
+    socket.on('userRegistered', (user) => {
+      currentUser = user;
+      currentUserName.textContent = `현재 플레이어: ${user.name}`;
+      loginModal.style.display = 'none';
+    });
+
+    socket.on('userUpdated', (user) => {
+      currentUser = user;
+      currentUserName.textContent = `현재 플레이어: ${user.name}`;
+    });
+
+    socket.on('dataUpdated', (data) => {
+      gameData = data;
+      renderGameData();
+    });
+
+    socket.on('error', (message) => {
+      alert(message);
+    });
+
+    registerBtn.addEventListener('click', () => {
+      const name = userNameInput.value.trim();
+      if (name) {
+        localStorage.setItem('userName', name);
+        socket.emit('registerUser', { name });
+      } else {
+        alert('이름을 입력해주세요.');
+      }
+    });
+
+    changeNameBtn.addEventListener('click', () => {
+      const newName = prompt('변경할 이름을 입력하세요:', currentUser?.name || '');
+      if (newName && newName.trim()) {
+        localStorage.setItem('userName', newName.trim());
+              // currentUser 객체에도 반영
+        currentUserName.textContent = `현재 플레이어: ${newName}`;
+        socket.emit('changeUserName', newName.trim());
+      }
+    });
+
+    cancelAddPlayerBtn.addEventListener('click', () => {
+      addPlayerModal.style.display = 'none';
+    });
+
+    confirmAddPlayerBtn.addEventListener('click', () => {
+      const playerName = playerNameInput.value.trim();
+      if (playerName) {
+        socket.emit('addExternalPlayer', {
+          teamKey: selectedTeamKey,
+          playerName
+        });
+        addPlayerModal.style.display = 'none';
+      } else {
+        alert('이름을 입력해주세요.');
+      }
+    });
+
+    function renderGameData() {
+      if (!gameData) return;
+      renderCourts();
+      renderTeams();
+    }
+
+    function renderCourts() {
+      courtContainer.innerHTML = '';
+
+      gameData.courts.forEach(court => {
+        const courtElement = document.createElement('div');
+        courtElement.className = `p-3 rounded-lg shadow ${court.inUse ? 'bg-red-100' : 'bg-green-100'}`;
+
+        let playersHtml = '';
+        if (court.inUse && court.players?.length > 0) {
+          playersHtml = `
+            <div class="text-sm mt-1">
+              플레이어: ${court.players.map(p => p.name).join(', ')}
+            </div>
+            <button class="mt-2 px-2 py-1 text-xs rounded bg-red-500 text-white w-full court-end-btn"
+              data-court-id="${court.id}">
+              게임 종료
+            </button>
+          `;
+        }
+
+        courtElement.innerHTML = `
+          <div class="flex justify-between items-center mb-2">
+            <span class="font-semibold">코트 ${court.id}</span>
+            <button class="px-2 py-1 text-xs rounded bg-blue-500 text-white court-toggle-btn"
+              data-court-id="${court.id}">
+              ${court.inUse ? '미사용' : '사용'} 변경
+            </button>
+          </div>
+          <div class="text-sm">상태: ${court.inUse ? '사용 중' : '미사용'}</div>
+          ${playersHtml}
+        `;
+
+        courtContainer.appendChild(courtElement);
+      });
+
+      document.querySelectorAll('.court-toggle-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+          const courtId = parseInt(this.getAttribute('data-court-id'));
+          socket.emit('toggleCourtStatus', courtId);
+        });
+      });
+
+      document.querySelectorAll('.court-end-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+          const courtId = parseInt(this.getAttribute('data-court-id'));
+          socket.emit('endGame', courtId);
+        });
+      });
+    }
+
+    function renderTeams() {
+      teamContainer.innerHTML = '';
+
+      Object.keys(gameData.teams).forEach(teamKey => {
+        const team = gameData.teams[teamKey];
+        const teamElement = document.createElement('div');
+        teamElement.className = 'bg-white p-3 rounded-lg shadow';
+
+        let queueHtml = '';
+        if (team.queue?.length > 0) {
+          queueHtml = team.queue.map((player, index) => {
+            let cancelBtn = '';
+            if (currentUser && (player.id === currentUser.id || player.addedBy === currentUser.id)) {
+              cancelBtn = `
+                <button class="px-2 py-1 text-xs rounded bg-red-500 text-white queue-cancel-btn"
+                  data-team-key="${teamKey}" data-player-id="${player.id}">
+                  취소
+                </button>
+              `;
+            }
+
+            return `<li class="py-1 flex justify-between items-center">
+              <span>${index + 1}. ${player.name}</span>
+              ${cancelBtn}
+            </li>`;
+          }).join('');
+        } else {
+          queueHtml = '<li class="py-1 text-gray-500">대기 중인 플레이어가 없습니다.</li>';
+        }
+
+        teamElement.innerHTML = `
+          <div class="flex justify-between items-center mb-2">
+            <span class="font-semibold">${team.name}</span>
+            <div class="flex space-x-2">
+              <button class="px-2 py-1 text-xs rounded bg-blue-500 text-white add-to-queue-btn"
+                data-team-key="${teamKey}">내 대기열 등록</button>
+              <button class="px-2 py-1 text-xs rounded bg-green-500 text-white add-player-btn"
+                data-team-key="${teamKey}">선수 추가</button>
+            </div>
+          </div>
+          <div class="text-sm">대기 인원: ${team.queue.length}/15</div>
+          <ul class="mt-2 text-sm divide-y">${queueHtml}</ul>
+        `;
+
+        teamContainer.appendChild(teamElement);
+      });
+
+      document.querySelectorAll('.add-to-queue-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+          const teamKey = this.getAttribute('data-team-key');
+          socket.emit('addToQueue', { teamKey });
+        });
+      });
+
+      document.querySelectorAll('.add-player-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+          const teamKey = this.getAttribute('data-team-key');
+          showAddPlayerModal(teamKey);
+        });
+      });
+
+      document.querySelectorAll('.queue-cancel-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+          const teamKey = this.getAttribute('data-team-key');
+          const playerId = this.getAttribute('data-player-id');
+          socket.emit('removeFromQueue', { teamKey, playerId });
+        });
+      });
+    }
+
+    userNameInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') registerBtn.click();
+    });
+
+    playerNameInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') confirmAddPlayerBtn.click();
+    });
+
+    window.onclick = function(event) {
+      if (event.target === addPlayerModal) {
+        addPlayerModal.style.display = 'none';
+      }
+    };
+  </script>
+</body>
+</html>
